@@ -269,3 +269,48 @@ test('a continued scene also ends on the whole picture', () => {
   const end = cameraAt(plan, 4.75);
   for (const e of items) assert.ok(whole(end, e), `box at ${e.box.x}`);
 });
+
+test("an arrow's label is kept whole, and a labelled arrow gets no close-up", () => {
+  const els = [
+    el('shape', 300, 420, 300, 160, 0.3),
+    el('shape', 1100, 420, 300, 160, 0.3),
+    el('arrow', 600, 480, 500, 40, 4),
+    el('label', 700, 380, 300, 40, 4),
+    el('shape', 1300, 760, 300, 120, 9),
+  ];
+  const plan = planCamera(els, { dur: 14, view, frame });
+  assert.ok(!plan.moves.some((m) => m.start > 3 && m.start < 5.5), JSON.stringify(plan.moves.map((m) => m.start)));
+  for (let t = 0; t < 14; t += 0.05) {
+    if (cameraMoving(plan, t)) continue;
+    const shown = els.filter((e) => e.at <= t && e.out > t);
+    assert.deepEqual(cuts(cameraAt(plan, t), shown), [], `t=${t.toFixed(2)}`);
+  }
+  // A close-up next to an arrow leaves its label out or takes it in.
+  const label = el('label', 520, 300, 360, 50, 0);
+  const shot = compose([el('shape', 860, 360, 200, 120, 0)], [label, el('arrow', 400, 360, 460, 30, 0)], view, frame);
+  assert.ok(shot.z > 1.2, `z ${shot.z}`);
+  assert.deepEqual(cuts(shot, [label]), []);
+});
+
+test('an icon or shape without words gets no close-up of its own', () => {
+  // The picture fills the frame from the start, so the icon fits the shot.
+  const picture = [el('text', 560, 120, 800, 120, 0.2), el('shape', 150, 400, 300, 300, 0.2), el('shape', 1470, 400, 300, 300, 0.2)];
+  const plan = (icon) => planCamera([...picture, icon], { dur: 12, view, frame, voiceEnd: 11 });
+  const icon = el('icon', 900, 600, 120, 120, 3);
+  const bare = plan({ ...icon, bare: true });
+  assert.ok(!bare.moves.some((m) => m.start > 2 && m.start < 4 && m.to.z > m.from.z * 1.2), JSON.stringify(bare.moves));
+  const labelled = plan({ ...icon, box: { ...icon.box, h: 190 } });
+  assert.ok(labelled.moves.some((m) => m.start > 2 && m.start < 4 && m.to.z > m.from.z * 1.2), JSON.stringify(labelled.moves));
+});
+
+test("an arrow's label does not count on its own when a scene continues the one before", () => {
+  const card = (x) => el('shape', x, 450, 260, 140, 0.5);
+  const arrow = (x) => el('arrow', x, 500, 300, 40, 1);
+  const label = (x) => el('label', x + 60, 440, 180, 40, 1);
+  const a = [card(200), card(780), arrow(470), label(470), card(1360), arrow(1050), label(1050)];
+  const b = [card(200), card(780), card(1360), arrow(470), label(470)].map((e) => ({ ...e, at: -1 }));
+  assert.equal(continues(a, b, { x0: 0, y0: 0, x1: 1920, y1: 1080 }), continues(a.filter((e) => e.kind !== 'label'), b.filter((e) => e.kind !== 'label'), { x0: 0, y0: 0, x1: 1920, y1: 1080 }));
+  const two = [card(200), card(780), arrow(470), label(470), arrow(1050), label(1050)];
+  const one = [card(200), card(780), arrow(470)].map((e) => ({ ...e, at: -1 }));
+  assert.ok(continues(two, one, { x0: 0, y0: 0, x1: 1920, y1: 1080 }));
+});

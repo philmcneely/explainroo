@@ -223,7 +223,9 @@ export function planCamera(elements, { dur, view, frame, pace = 1, voiceEnd = nu
   const hold = MIN_HOLD / pace;
   const visibleDuring = (t0, t1) => items.filter((e) => e.at <= t1 && e.out > t0 + 0.25);
   const picture = (list) => list.filter((e) => e.kind !== 'focus');
-  const solid = (list) => list.filter((e) => !['arrow', 'line', 'focus'].includes(e.kind));
+  // What the camera may move in on. An arrow's label is kept whole, but it
+  // is part of the arrow, which gets no close-up.
+  const solid = (list) => list.filter((e) => !['arrow', 'line', 'focus', 'label'].includes(e.kind));
   // Everything on screen from t0 to t1, framed as one picture.
   const overview = (t0, t1) => {
     const v = picture(visibleDuring(t0, t1));
@@ -231,7 +233,8 @@ export function planCamera(elements, { dur, view, frame, pace = 1, voiceEnd = nu
   };
   // Whether a shot already shows these elements whole, in the free part of
   // the frame, also at the end of its slow push. A beat of only arrows and
-  // lines fits when they are at least partly in view.
+  // lines fits when they are at least partly in view. An arrow's label has
+  // to be whole.
   const fits = (shot, list) => {
     const body = list.filter((e) => e.kind !== 'arrow' && e.kind !== 'line');
     const tight = shot.drift === 0 ? shot : clampShot({ ...shot, z: shot.z * (1 + DRIFT) }, view, frame);
@@ -323,14 +326,15 @@ export function planCamera(elements, { dur, view, frame, pace = 1, voiceEnd = nu
       }
       continue;
     }
-    const before = items.filter((e) => e.at < beat.start - 0.05 && e.out > beat.start + 0.3 && e.kind !== 'focus' && e.kind !== 'ink');
+    const before = items.filter((e) => e.at < beat.start - 0.05 && e.out > beat.start + 0.3 && !['focus', 'ink', 'label'].includes(e.kind));
     if (fits(cur, fresh)) {
       // It is already in the shot. The camera moves in only on a new card,
       // label or picture. A line, an arrow, or something drawn inside an
       // element that is already there, like a line in a chart, gets no
-      // close-up. It tries the new thing with its neighbours first, then on
-      // its own.
-      const own = solid(fresh).filter((e) => !before.some((f) => f.box.w * f.box.h >= e.box.w * e.box.h * 2 && contains(f.box, e.box)));
+      // close-up. Nor does an icon or shape without words: up close it shows
+      // nothing more. It tries the new thing with its neighbours first, then
+      // on its own.
+      const own = solid(fresh).filter((e) => !e.bare && !before.some((f) => f.box.w * f.box.h >= e.box.w * e.box.h * 2 && contains(f.box, e.box)));
       // It is on screen already, so the push may wait a moment for its turn.
       const at = Math.max(begin, last + hold);
       if (!own.length || at > beat.start + 1 / pace || at - zoomed < PUSH_GAP / pace) continue;
@@ -447,9 +451,12 @@ export function cameraMoving(plan, t) {
 
 // Whether scene B picks up where scene A left off: what A's last frame
 // shows is mostly still there when B starts, in the same places. `last` is
-// the part of the scene A's camera shows at the end.
+// the part of the scene A's camera shows at the end. An arrow's label goes
+// with its arrow, so it does not count on its own.
 export function continues(a, b, last) {
   const inView = (e) => e.box.x + e.box.w / 2 > last.x0 && e.box.x - e.box.w / 2 < last.x1 && e.box.y + e.box.h / 2 > last.y0 && e.box.y - e.box.h / 2 < last.y1;
+  a = a.filter((e) => e.kind !== 'label');
+  b = b.filter((e) => e.kind !== 'label');
   const end = a.filter((e) => e.out === Infinity && inView(e));
   const carried = b.filter((e) => e.at <= 0.05);
   if (end.length < 2 || carried.length < 2) return false;
